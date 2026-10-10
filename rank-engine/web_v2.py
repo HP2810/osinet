@@ -2,6 +2,7 @@ import html
 from fastapi import HTTPException
 from fastapi.responses import HTMLResponse
 import app as base
+import location_fixes  # patches geocoding + scan diagnostics before enhancements wrap the worker
 import enhancements as enh
 
 app=base.app
