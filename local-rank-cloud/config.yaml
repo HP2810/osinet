@@ -1,0 +1,26 @@
+scan:
+  grid_rows: 5
+  grid_cols: 5
+  repetitions: 3
+  max_results_per_search: 12
+  page_wait_ms: 4500
+  scroll_rounds: 4
+  delay_between_searches_seconds: 2.5
+  locale: en-US
+  timezone_id: America/New_York
+  headless: true
+  screenshot_full_page: true
+  max_businesses_to_enrich: 40
+geocoder:
+  base_url: "https://nominatim.openstreetmap.org"
+  user_agent: "LocalRankProspectingEngine/1.0"
+  cache_file: data/geocode_cache.json
+scoring:
+  business_strength_weight: 0.30
+  digital_weakness_weight: 0.35
+  ranking_gap_weight: 0.25
+  competitor_pressure_weight: 0.10
+  top5_threshold: 5
+website_audit:
+  timeout_seconds: 12
+  user_agent: "Mozilla/5.0 (compatible; LocalRankProspectingEngine/1.0)"
