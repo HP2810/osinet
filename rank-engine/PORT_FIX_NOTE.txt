@@ -1,0 +1,1 @@
+Railway startup hardening: service listens on fixed port 8000 to avoid legacy Function PORT interpolation issues.
