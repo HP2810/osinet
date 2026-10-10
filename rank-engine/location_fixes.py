@@ -2,6 +2,7 @@ from __future__ import annotations
 import re, time
 import app as base
 
+_ORIG_PARSE = base.parse
 _ORIG_GEOCODE = base.geocode
 _ORIG_WORKER = base.worker
 
@@ -13,6 +14,23 @@ _JOINED_US_NAMES = {
     'rhodeisland':'Rhode Island', 'losangeles':'Los Angeles',
     'sanfrancisco':'San Francisco', 'fortworth':'Fort Worth',
     'washingtondc':'Washington DC', 'neworleans':'New Orleans',
+    'longislandcity':'Long Island City', 'saltlakecity':'Salt Lake City',
+    'kansascity':'Kansas City', 'oklahomacity':'Oklahoma City',
+}
+
+_STATE_NAMES = {
+    'alabama','alaska','arizona','arkansas','california','colorado','connecticut','delaware',
+    'florida','georgia','hawaii','idaho','illinois','indiana','iowa','kansas','kentucky',
+    'louisiana','maine','maryland','massachusetts','michigan','minnesota','mississippi',
+    'missouri','montana','nebraska','nevada','new hampshire','new jersey','new mexico',
+    'new york','north carolina','north dakota','ohio','oklahoma','oregon','pennsylvania',
+    'rhode island','south carolina','south dakota','tennessee','texas','utah','vermont',
+    'virginia','washington','west virginia','wisconsin','wyoming','district of columbia'
+}
+_STATE_ABBRS = {
+    'al','ak','az','ar','ca','co','ct','de','fl','ga','hi','id','il','in','ia','ks','ky','la',
+    'me','md','ma','mi','mn','ms','mo','mt','ne','nv','nh','nj','nm','ny','nc','nd','oh','ok',
+    'or','pa','ri','sc','sd','tn','tx','ut','vt','va','wa','wv','wi','wy','dc'
 }
 
 def normalize_location_text(place: str) -> str:
@@ -22,6 +40,84 @@ def normalize_location_text(place: str) -> str:
     text=re.sub(r'\bN\.Y\.\b','NY',text,flags=re.I)
     text=re.sub(r'\bN\.J\.\b','NJ',text,flags=re.I)
     return ' '.join(text.split())
+
+def _normalized_words(text: str):
+    return [re.sub(r'[^a-z0-9]+','',x.lower()) for x in normalize_location_text(text).split() if re.sub(r'[^a-z0-9]+','',x.lower())]
+
+def _state_suffix_len(words):
+    for n in (3,2,1):
+        if len(words) < n:
+            continue
+        phrase=' '.join(words[-n:]).lower().strip(' ,.')
+        if phrase in _STATE_NAMES or phrase in _STATE_ABBRS:
+            return n
+    return 0
+
+def _candidate_matches_locality(candidate: str, result: dict, state_len: int) -> bool:
+    cand=_normalized_words(candidate)
+    locality=cand[:-state_len] if state_len else cand
+    display=' '.join(_normalized_words(result.get('display','')))
+    meaningful=[t for t in locality if len(t) >= 3 and t not in {'the','and','for'}]
+    return bool(meaningful) and all(t in display for t in meaningful)
+
+def _infer_suffix_location(query: str):
+    text=normalize_location_text(query)
+    words=text.split()
+    if len(words) < 2:
+        return None
+    state_len=_state_suffix_len(words)
+
+    if state_len:
+        max_city=min(5, len(words)-state_len-1)
+        for city_len in range(max_city,0,-1):
+            split=len(words)-state_len-city_len
+            if split < 1:
+                continue
+            candidate=' '.join(words[split:])
+            try:
+                result=_ORIG_GEOCODE(candidate)
+                if _candidate_matches_locality(candidate,result,state_len):
+                    return ' '.join(words[:split]).strip(), candidate
+            except Exception:
+                pass
+            time.sleep(1.02)
+        return None
+
+    max_loc=min(4,len(words)-1)
+    for loc_len in range(max_loc,0,-1):
+        split=len(words)-loc_len
+        if split < 1:
+            continue
+        candidate=' '.join(words[split:])
+        try:
+            result=_ORIG_GEOCODE(candidate)
+            if _candidate_matches_locality(candidate,result,0):
+                return ' '.join(words[:split]).strip(), candidate
+        except Exception:
+            pass
+        time.sleep(1.02)
+    return None
+
+def smart_parse(q: str):
+    q=' '.join((q or '').strip().split())
+    normalized=normalize_location_text(q)
+    matches=list(re.finditer(r'\s+in\s+',normalized,re.I))
+    if matches:
+        m=matches[-1]
+        service=normalized[:m.start()].strip()
+        loc=normalized[m.end():].strip()
+        print(f"[parse] explicit-in query={q!r} service={service!r} location={loc!r}",flush=True)
+        return service,loc
+
+    inferred=_infer_suffix_location(normalized)
+    if inferred:
+        service,loc=inferred
+        print(f"[parse] inferred query={q!r} service={service!r} location={loc!r}",flush=True)
+        return service,loc
+
+    service,loc=_ORIG_PARSE(normalized)
+    print(f"[parse] fallback query={q!r} service={service!r} location={loc!r}",flush=True)
+    return service,loc
 
 def location_variants(place: str):
     normalized=normalize_location_text(place)
@@ -62,5 +158,6 @@ def logged_worker(rid: str, q: str, loc: str):
     except Exception as e:
         print(f"[scan:{rid}] LOGGING_ERROR {e!r}",flush=True)
 
+base.parse=smart_parse
 base.geocode=robust_geocode
 base.worker=logged_worker
